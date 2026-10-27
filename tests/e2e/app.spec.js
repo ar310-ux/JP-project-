@@ -1,0 +1,19 @@
+import { test, expect } from '@playwright/test';
+async function add(page,type,name,amount){await page.locator(type==='income'?'#income-name':'#expense-name').fill(name);await page.locator(type==='income'?'#income-amount':'#expense-amount').fill(amount);await page.getByRole('button',{name:type==='income'?'Add income':'Add expense',exact:true}).click();}
+test('budget, savings plan, persistence and deletion work',async({page})=>{
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('/');
+ await expect(page.getByRole('heading',{name:'Make room for what matters.'})).toBeVisible();
+ await add(page,'income','Monthly salary','4000');await add(page,'expenses','Rent','1500');
+ await page.getByLabel('What are you saving for?').fill('Emergency fund');await page.getByLabel('Target amount').fill('10000');await page.getByLabel('Already saved').fill('1000');await page.getByLabel('Time to reach your goal').selectOption('12');await page.getByRole('button',{name:'Update my savings plan'}).click();
+ await expect(page.locator('.surplus h2')).toHaveText('$2,500.00');await expect(page.locator('.plan-card')).toContainText('$750.00 per month');await expect(page.locator('.plan-card')).toContainText('$1,750.00 left');
+ await page.reload();await expect(page.getByLabel('What are you saving for?')).toHaveValue('Emergency fund');await expect(page.locator('.entry-name').filter({hasText:'Monthly salary'})).toBeVisible();await expect(page.locator('.surplus h2')).toHaveText('$2,500.00');
+ await add(page,'expenses','Other costs','2000');await expect(page.locator('.plan-card')).toContainText('Free up $250.00 per month');await expect(page.locator('.plan-card')).toContainText('18 months');
+ await add(page,'expenses','Unexpected costs','1000');await expect(page.locator('.plan-card')).toContainText('monthly budget deficit');await expect(page.locator('.surplus h2')).toHaveText('-$500.00');
+ await page.getByRole('button',{name:'Delete Unexpected costs',exact:true}).click();await expect(page.locator('.surplus h2')).toHaveText('$500.00');
+ await page.getByLabel('Already saved').fill('10000');await page.getByRole('button',{name:'Update my savings plan'}).click();await expect(page.getByRole('heading',{name:'You made it. Goal reached!'})).toBeVisible();
+ await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow','100');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
+ await page.screenshot({path:`test-results/${test.info().project.name}-budget.png`,fullPage:true});
+});
+test('validation, safe text, navigation and export',async({page})=>{await page.goto('/');await page.getByRole('button',{name:'Add income',exact:true}).click();await expect(page.locator('.entry')).toHaveCount(0);await add(page,'income','<img src=x onerror=alert(1)>','100');await expect(page.locator('.entry-name')).toHaveText('<img src=x onerror=alert(1)>');await expect(page.locator('.entry img')).toHaveCount(0);await page.getByRole('button',{name:'Savings goal',exact:false}).click();await expect(page.locator('.budget-column')).toBeHidden();await page.getByRole('button',{name:'Monthly budget',exact:false}).click();await expect(page.locator('.budget-column')).toBeVisible();const downloadPromise=page.waitForEvent('download');await page.locator('[data-export]:visible').click();const download=await downloadPromise;expect(download.suggestedFilename()).toBe('pocketplan-budget.json');});
+test('storage failure is clearly reported',async({page})=>{await page.addInitScript(()=>{Storage.prototype.setItem=()=>{throw new Error('Full');};});await page.goto('/');await add(page,'income','Salary','500');await expect(page.getByRole('alert')).toContainText('could not be saved');await expect(page.locator('.saved')).toContainText('Not saved');});

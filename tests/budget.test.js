@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { calculate, emptyBudget, loadBudget, validBudget } from '../src/budget.js';
+const fixture = () => ({income:[{id:'a',name:'Salary',amount:4000}],expenses:[{id:'b',name:'Rent',amount:1500}],goal:{name:'Buffer',target:10000,saved:1000,months:12}});
+test('calculates monthly surplus, required savings and goal progress',()=>{const c=calculate(fixture());assert.equal(c.surplus,2500);assert.equal(c.monthly,750);assert.equal(c.remaining,9000);assert.equal(c.gap,0);assert.equal(c.progress,10);assert.equal(c.monthsNeeded,4);});
+test('shortfall includes covering a monthly deficit',()=>{const b=fixture();b.expenses[0].amount=4500;const c=calculate(b);assert.equal(c.surplus,-500);assert.equal(c.gap,1250);assert.equal(c.monthsNeeded,null);});
+test('completed goals never require negative savings',()=>{const b=fixture();b.goal.saved=11000;const c=calculate(b);assert.equal(c.monthly,0);assert.equal(c.remaining,0);assert.equal(c.progress,100);});
+test('money totals avoid common floating point errors',()=>{const b=emptyBudget();b.income=[{amount:0.1},{amount:0.2}];assert.equal(calculate(b).income,0.3);});
+test('rounds savings up so the target is reached',()=>{const b=fixture();b.goal={name:'Test',target:100,saved:0,months:3};assert.equal(calculate(b).monthly,33.34);});
+test('loads saved budgets and rejects corrupt or unsafe stored data',()=>{assert.deepEqual(loadBudget({getItem:()=>JSON.stringify(fixture())}).budget,fixture());assert.ok(loadBudget({getItem:()=>'{broken'}).error);assert.ok(loadBudget({getItem:()=>{throw new Error();}}).error);const b=fixture();b.goal.months=0;assert.equal(validBudget(b),false);b.goal.months=12;b.income[0].amount=-5;assert.equal(validBudget(b),false);});
